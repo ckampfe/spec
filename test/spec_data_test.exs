@@ -65,7 +65,7 @@ defmodule SpecDataTest do
       msrp: 27_001,
       make: :lancia,
       model: "delta",
-      miles: 2,
+      miles: 2402,
       year: 2025
     }
 
@@ -104,7 +104,7 @@ defmodule SpecDataTest do
       msrp: 27_001,
       make: :lancia,
       model: "delta",
-      miles: 2,
+      miles: 8,
       year: "2025"
     }
 

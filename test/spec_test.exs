@@ -4,6 +4,14 @@ defmodule SpecTest do
   use ExUnit.Case
   doctest Spec
 
+  def equals_42(v) do
+    v == 42
+  end
+
+  def in_10_100(v) do
+    v in 10..100
+  end
+
   test "valid?/2" do
     assert Spec.valid?(&Integer.is_even/1, 2)
     refute Spec.valid?(&Integer.is_even/1, 1)
@@ -11,6 +19,8 @@ defmodule SpecTest do
     refute Spec.valid?(MapSet.new([1, 2, 3]), 9)
 
     assert Spec.valid?(Enum, :empty?, [])
+
+    refute Spec.valid?(__MODULE__, :equals_42, 22)
   end
 
   test "conform/2" do
@@ -19,10 +29,13 @@ defmodule SpecTest do
     assert Spec.conform(MapSet.new([1, 2, 3]), 1) == {:ok, 1}
     assert match?({:error, _}, Spec.conform(MapSet.new([1, 2, 3]), 9))
 
-    assert Spec.valid?(Enum, :empty?, []) == {:ok, []}
+    assert Spec.conform(Enum, :empty?, []) == {:ok, []}
+
+    assert {:error, %{value: 22, path: [], spec: {__MODULE__, :equals_42}}} =
+             Spec.conform(__MODULE__, :equals_42, 22)
   end
 
-  test "and" do
+  test "all" do
     spec = Spec.all?([&Integer.is_even/1, fn v -> v < 10 end])
 
     assert Spec.conform(spec, 4) == {:ok, 4}
@@ -30,9 +43,16 @@ defmodule SpecTest do
 
     assert Spec.valid?(spec, 4)
     refute Spec.valid?(spec, 12)
+
+    module_spec = Spec.all?([{__MODULE__, :equals_42}, {__MODULE__, :in_10_100}])
+
+    assert Spec.conform(module_spec, 111) ==
+             {:error, %{value: 111, path: [], spec: {SpecTest, :equals_42}}}
+
+    assert Spec.conform(module_spec, 42) == {:ok, 42}
   end
 
-  test "or" do
+  test "any" do
     spec = Spec.any?(even: &Integer.is_even/1, less_than_10: fn v -> v < 10 end)
 
     assert Spec.conform(spec, 4) == {:ok, {:even, 4}}
@@ -42,6 +62,18 @@ defmodule SpecTest do
     assert Spec.valid?(spec, 4)
     assert Spec.valid?(spec, 12)
     refute Spec.valid?(spec, 31)
+
+    module_spec =
+      Spec.any?(is_42: {__MODULE__, :equals_42}, in_range: {__MODULE__, :in_10_100})
+
+    assert Spec.conform(module_spec, 111) ==
+             {:error,
+              [
+                %{value: 111, path: [:in_range], spec: {SpecTest, :in_10_100}},
+                %{value: 111, path: [:is_42], spec: {SpecTest, :equals_42}}
+              ]}
+
+    assert Spec.conform(module_spec, 42) == {:ok, {:is_42, 42}}
   end
 
   test "keys required only" do

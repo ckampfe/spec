@@ -215,8 +215,11 @@ defmodule Spec do
       r when is_function(r, 1) ->
         do_conform(r, value, path)
 
-      _ ->
+      truthy_value when truthy_value ->
         {:ok, value}
+
+      _falsy_value ->
+        {:error, %{value: value, spec: {m, f}, path: path}}
     end
   end
 
@@ -241,7 +244,7 @@ defmodule Spec do
   end
 
   def valid?(m, f, value) when is_atom(m) and is_atom(f) do
-    conform(m, f, value)
+    match?({:ok, _}, conform(m, f, value))
   end
 
   # Kernel.def def(name, do: body) do
