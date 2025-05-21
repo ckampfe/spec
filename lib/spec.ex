@@ -6,35 +6,35 @@
 defmodule Spec do
   defmacro all?(specs) when is_list(specs) do
     quote do
-      {:all, unquote(specs)}
+      {:spec, {:all, unquote(specs)}}
     end
   end
 
   defmacro any?(specs) when is_list(specs) do
     quote do
-      {:any, unquote(specs)}
+      {:spec, {:any, unquote(specs)}}
     end
   end
 
   defmacro keys(args) when is_list(args) do
     quote do
-      {:keys, unquote(args)}
+      {:spec, {:keys, unquote(args)}}
     end
   end
 
   def conform(m, f, value) when is_atom(m) and is_atom(f) do
-    do_conform(m, f, value, [])
+    do_conform({m, f}, value, [])
   end
 
   def conform(spec, value) when is_function(spec, 1) do
     do_conform(spec, value, [])
   end
 
-  def conform({:all, _specs} = expr, value) do
+  def conform({:spec, {:all, _specs}} = expr, value) do
     do_conform(expr, value, [])
   end
 
-  def conform({:any, _specs_and_keys} = expr, value) do
+  def conform({:spec, {:any, _specs_and_keys}} = expr, value) do
     do_conform(expr, value, [])
   end
 
@@ -42,7 +42,11 @@ defmodule Spec do
     do_conform(spec, value, [])
   end
 
-  def conform({:keys, _specs} = expr, value) when is_map(value) do
+  def conform(%Range{} = spec, value) do
+    do_conform(spec, value, [])
+  end
+
+  def conform({:spec, {:keys, _specs}} = expr, value) when is_map(value) do
     do_conform(expr, value, [])
   end
 
@@ -54,7 +58,7 @@ defmodule Spec do
     end
   end
 
-  defp do_conform({:keys, specs} = spec, value, path) when is_map(value) do
+  defp do_conform({:spec, {:keys, specs}} = full, value, path) when is_map(value) do
     req_specs = specs[:required]
     opt_specs = specs[:optional]
     keys = MapSet.new(Map.keys(value))
@@ -62,7 +66,7 @@ defmodule Spec do
     req_keyset = specs[:required] |> Keyword.keys() |> MapSet.new()
 
     opt_keyset =
-      specs[:optional] |> Keyword.keys() |> MapSet.new()
+      Keyword.get(specs, :optional, []) |> Keyword.keys() |> MapSet.new()
 
     common_keys =
       MapSet.intersection(req_keyset, opt_keyset)
@@ -71,7 +75,7 @@ defmodule Spec do
       throw(
         {:error,
          %{
-           spec: spec,
+           spec: full,
            value: value,
            path: path,
            error: "required and optional keysets cannot both be empty"
@@ -83,7 +87,7 @@ defmodule Spec do
       throw(
         {:error,
          %{
-           spec: spec,
+           spec: full,
            value: value,
            path: path,
            error: "required keys cannot alows be optional keys"
@@ -96,7 +100,7 @@ defmodule Spec do
 
       throw(
         {:error,
-         %{spec: spec, value: value, path: path, error: "missing #{inspect(Enum.to_list(diff))}"}}
+         %{spec: full, value: value, path: path, error: "missing #{inspect(Enum.to_list(diff))}"}}
       )
     end
 
@@ -104,16 +108,14 @@ defmodule Spec do
       Enum.reduce_while(req_specs, {value, []}, fn {key, spec}, {acc, errors} ->
         value_for_key = Map.fetch!(acc, key)
 
-        case do_conform(spec, value_for_key, path) do
+        case do_conform(spec, value_for_key, path ++ [key]) do
           {:ok, conformed} ->
             {:cont, {Map.put(acc, key, conformed), errors}}
 
-          {:error, e} ->
-            e =
-              Map.update!(e, :path, fn path ->
-                [key | path]
-              end)
+          {:error, e} when is_list(e) ->
+            {:cont, {acc, e ++ errors}}
 
+          {:error, e} ->
             {:cont, {acc, [e | errors]}}
         end
       end)
@@ -125,16 +127,14 @@ defmodule Spec do
             {:cont, {acc, errors}}
 
           {:ok, value_for_key} ->
-            case do_conform(spec, value_for_key, path) do
+            case do_conform(spec, value_for_key, path ++ [key]) do
               {:ok, conformed} ->
                 {:cont, {Map.put(acc, key, conformed), errors}}
 
-              {:error, e} ->
-                e =
-                  Map.update!(e, :path, fn path ->
-                    [key | path]
-                  end)
+              {:error, e} when is_list(e) ->
+                {:cont, {acc, e ++ errors}}
 
+              {:error, e} ->
                 {:cont, {acc, [e | errors]}}
             end
         end
@@ -158,7 +158,15 @@ defmodule Spec do
     end
   end
 
-  defp do_conform({:all, specs}, value, path) do
+  defp do_conform(%Range{} = spec, value, path) do
+    if value in spec do
+      {:ok, value}
+    else
+      {:error, %{value: value, spec: spec, path: path}}
+    end
+  end
+
+  defp do_conform({:spec, {:all, specs}}, value, path) do
     out =
       Enum.reduce_while(specs, value, fn spec, acc ->
         case do_conform(spec, acc, path) do
@@ -176,7 +184,7 @@ defmodule Spec do
     end
   end
 
-  defp do_conform({:any, specs_and_keys}, value, path) do
+  defp do_conform({:spec, {:any, specs_and_keys}}, value, path) do
     out =
       Enum.reduce_while(specs_and_keys, [], fn {key, spec}, errors ->
         case do_conform(spec, value, path) do
@@ -199,11 +207,16 @@ defmodule Spec do
     end
   end
 
-  defp do_conform(m, f, value, path) when is_atom(m) and is_atom(f) do
-    if apply(m, f, [value]) do
-      {:ok, value}
-    else
-      {:error, %{spec: {m, f}, value: value, path: path}}
+  defp do_conform({m, f}, value, path) when is_atom(m) and is_atom(f) do
+    case apply(m, f, [value]) do
+      {:spec, _spec} = s ->
+        do_conform(s, value, path)
+
+      r when is_function(r, 1) ->
+        do_conform(r, value, path)
+
+      _ ->
+        {:ok, value}
     end
   end
 
@@ -211,15 +224,15 @@ defmodule Spec do
     match?({:ok, _}, conform(spec, value))
   end
 
-  def valid?({:keys, _specs} = keys_expr, value) do
+  def valid?({:spec, {:keys, _specs}} = keys_expr, value) do
     match?({:ok, _}, conform(keys_expr, value))
   end
 
-  def valid?({:all, _specs} = and_expr, value) do
+  def valid?({:spec, {:all, _specs}} = and_expr, value) do
     match?({:ok, _}, conform(and_expr, value))
   end
 
-  def valid?({:any, _specs} = or_expr, value) do
+  def valid?({:spec, {:any, _specs}} = or_expr, value) do
     match?({:ok, _}, conform(or_expr, value))
   end
 

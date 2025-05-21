@@ -9,6 +9,8 @@ defmodule SpecTest do
     refute Spec.valid?(&Integer.is_even/1, 1)
     assert Spec.valid?(MapSet.new([1, 2, 3]), 1)
     refute Spec.valid?(MapSet.new([1, 2, 3]), 9)
+
+    assert Spec.valid?(Enum, :empty?, [])
   end
 
   test "conform/2" do
@@ -16,16 +18,18 @@ defmodule SpecTest do
     assert match?({:error, %{value: 1}}, Spec.conform(&Integer.is_even/1, 1))
     assert Spec.conform(MapSet.new([1, 2, 3]), 1) == {:ok, 1}
     assert match?({:error, _}, Spec.conform(MapSet.new([1, 2, 3]), 9))
+
+    assert Spec.valid?(Enum, :empty?, []) == {:ok, []}
   end
 
   test "and" do
-    specs = Spec.all?([&Integer.is_even/1, fn v -> v < 10 end])
+    spec = Spec.all?([&Integer.is_even/1, fn v -> v < 10 end])
 
-    assert Spec.conform(specs, 4) == {:ok, 4}
-    assert match?({:error, _}, Spec.conform(specs, 12))
+    assert Spec.conform(spec, 4) == {:ok, 4}
+    assert match?({:error, _}, Spec.conform(spec, 12))
 
-    assert Spec.valid?(specs, 4)
-    refute Spec.valid?(specs, 12)
+    assert Spec.valid?(spec, 4)
+    refute Spec.valid?(spec, 12)
   end
 
   test "or" do
