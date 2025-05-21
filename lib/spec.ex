@@ -23,7 +23,7 @@ defmodule Spec do
   end
 
   def conform(m, f, value) when is_atom(m) and is_atom(f) do
-    do_conform(&m.f/1, value, [])
+    do_conform(m, f, value, [])
   end
 
   def conform(spec, value) when is_function(spec, 1) do
@@ -46,23 +46,10 @@ defmodule Spec do
     do_conform(expr, value, [])
   end
 
-  def conform({:keys, _specs}, value) when not is_map(value) do
-    Spec.Invalid
-  end
-
-  # defp do_conform(m, f, value, path) when is_atom(m) and is_atom(f) do
-  #   if m.f(value) do
-  #     value
-  #   else
-  #     Spec.Invalid
-  #   end
-  # end
-
   defp do_conform(spec, value, path) when is_function(spec, 1) do
     if spec.(value) do
       {:ok, value}
     else
-      Spec.Invalid
       {:error, %{spec: spec, value: value, path: path}}
     end
   end
@@ -104,8 +91,6 @@ defmodule Spec do
       )
     end
 
-    # TODO
-    # if required keyset is not a subset of value keyset, raise
     if !MapSet.subset?(req_keyset, keys) do
       diff = MapSet.difference(req_keyset, keys)
 
@@ -114,12 +99,6 @@ defmodule Spec do
          %{spec: spec, value: value, path: path, error: "missing #{inspect(Enum.to_list(diff))}"}}
       )
     end
-
-    # TODO
-    # req keys and opt keys cannot overlap
-
-    # TODO
-    # req keys can be empty
 
     if MapSet.equal?(
          MapSet.intersection(req_keyset, keys),
@@ -139,8 +118,6 @@ defmodule Spec do
                   [key | path]
                 end)
 
-              # {:halt, {:error, e}}
-              # {:cont, }
               {:cont, {acc, [e | errors]}}
           end
         end)
@@ -191,8 +168,6 @@ defmodule Spec do
   defp do_conform({:all, specs}, value, path) do
     out =
       Enum.reduce_while(specs, value, fn spec, acc ->
-        # conformed = do_conform(spec, acc, path)
-
         case do_conform(spec, acc, path) do
           {:ok, conformed} ->
             {:cont, conformed}
@@ -209,23 +184,6 @@ defmodule Spec do
   end
 
   defp do_conform({:any, specs_and_keys}, value, path) do
-    # Enum.find_value(specs_and_keys, Spec.Invalid, fn {key, spec} ->
-    #   # conformed = do_conform(spec, value, path)
-
-    #   # if conformed != Spec.Invalid do
-    #   #   {key, conformed}
-    #   # else
-    #   #   false
-    #   # end
-
-    #   case do_conform(spec, value, path) do
-    #     {:ok, conformed} ->
-    #       {:ok, {key, conformed}}
-
-    #     {:error, e} ->
-    #       false
-    #   end
-    # end)
     out =
       Enum.reduce_while(specs_and_keys, [], fn {key, spec}, errors ->
         case do_conform(spec, value, path) do
@@ -248,33 +206,36 @@ defmodule Spec do
     end
   end
 
+  defp do_conform(m, f, value, path) when is_atom(m) and is_atom(f) do
+    if apply(m, f, [value]) do
+      {:ok, value}
+    else
+      {:error, %{spec: {m, f}, value: value, path: path}}
+    end
+  end
+
   def valid?(%MapSet{} = spec, value) do
-    # conform(spec, value) != Spec.Invalid
     match?({:ok, _}, conform(spec, value))
   end
 
   def valid?({:keys, _specs} = keys_expr, value) do
-    # conform(keys_expr, value) != Spec.Invalid
     match?({:ok, _}, conform(keys_expr, value))
   end
 
   def valid?({:all, _specs} = and_expr, value) do
-    # conform(and_expr, value) != Spec.Invalid
     match?({:ok, _}, conform(and_expr, value))
   end
 
   def valid?({:any, _specs} = or_expr, value) do
-    # conform(or_expr, value) != Spec.Invalid
     match?({:ok, _}, conform(or_expr, value))
   end
 
   def valid?(spec, value) when is_function(spec, 1) do
-    # !!spec.(value)
     match?({:ok, _}, conform(spec, value))
   end
 
-  def valid?(m, f, _value) when is_atom(m) and is_atom(f) do
-    raise "todo"
+  def valid?(m, f, value) when is_atom(m) and is_atom(f) do
+    conform(m, f, value)
   end
 
   # Kernel.def def(name, do: body) do
