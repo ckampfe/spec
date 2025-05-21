@@ -100,57 +100,50 @@ defmodule Spec do
       )
     end
 
-    if MapSet.equal?(
-         MapSet.intersection(req_keyset, keys),
-         req_keyset
-       ) do
-      {req_conform, errors} =
-        Enum.reduce_while(req_specs, {value, []}, fn {key, spec}, {acc, errors} ->
-          value_for_key = Map.fetch!(acc, key)
+    {req_conform, errors} =
+      Enum.reduce_while(req_specs, {value, []}, fn {key, spec}, {acc, errors} ->
+        value_for_key = Map.fetch!(acc, key)
 
-          case do_conform(spec, value_for_key, path) do
-            {:ok, conformed} ->
-              {:cont, {Map.put(acc, key, conformed), errors}}
+        case do_conform(spec, value_for_key, path) do
+          {:ok, conformed} ->
+            {:cont, {Map.put(acc, key, conformed), errors}}
 
-            {:error, e} ->
-              e =
-                Map.update!(e, :path, fn path ->
-                  [key | path]
-                end)
+          {:error, e} ->
+            e =
+              Map.update!(e, :path, fn path ->
+                [key | path]
+              end)
 
-              {:cont, {acc, [e | errors]}}
-          end
-        end)
+            {:cont, {acc, [e | errors]}}
+        end
+      end)
 
-      {out, errors} =
-        Enum.reduce_while(opt_specs, {req_conform, errors}, fn {key, spec}, {acc, errors} ->
-          case Map.fetch(acc, key) do
-            :error ->
-              {:cont, {acc, errors}}
+    {out, errors} =
+      Enum.reduce_while(opt_specs, {req_conform, errors}, fn {key, spec}, {acc, errors} ->
+        case Map.fetch(acc, key) do
+          :error ->
+            {:cont, {acc, errors}}
 
-            {:ok, value_for_key} ->
-              case do_conform(spec, value_for_key, path) do
-                {:ok, conformed} ->
-                  {:cont, {Map.put(acc, key, conformed), errors}}
+          {:ok, value_for_key} ->
+            case do_conform(spec, value_for_key, path) do
+              {:ok, conformed} ->
+                {:cont, {Map.put(acc, key, conformed), errors}}
 
-                {:error, e} ->
-                  e =
-                    Map.update!(e, :path, fn path ->
-                      [key | path]
-                    end)
+              {:error, e} ->
+                e =
+                  Map.update!(e, :path, fn path ->
+                    [key | path]
+                  end)
 
-                  {:cont, {acc, [e | errors]}}
-              end
-          end
-        end)
+                {:cont, {acc, [e | errors]}}
+            end
+        end
+      end)
 
-      if !Enum.empty?(errors) do
-        {:error, errors}
-      else
-        {:ok, out}
-      end
+    if !Enum.empty?(errors) do
+      {:error, errors}
     else
-      Spec.Invalid
+      {:ok, out}
     end
   catch
     :throw, e ->
