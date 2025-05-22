@@ -308,8 +308,8 @@ defimpl AsSpec, for: Range do
 end
 
 defimpl AsSpec, for: Any do
-  def test(_spec, _value, _context) do
-    raise "lkdjfjlkj"
+  def test(spec, _value, _context) do
+    raise "No AsSpec implementation exists for #{spec}"
   end
 
   def to_string(spec) do
