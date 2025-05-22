@@ -6,6 +6,7 @@
 # - [x] struct to store all spec context
 # - [ ] write docs
 # - [ ] set up CI
+# - [ ] README
 
 defmodule Spec do
   @enforce_keys [:impl, :repr]
