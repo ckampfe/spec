@@ -86,7 +86,7 @@ defmodule SpecDataTest do
              :error,
              [
                %{value: 2025, path: [:year], spec: _},
-               %{value: 60, path: [:financing, :term_months], spec: 0..50},
+               %{value: 60, path: [:financing, :term_months], spec: "0..50"},
                %{value: "sof", path: [:financing, :interest_rate], spec: _}
              ]
            } = Spec.conform(spec, data)

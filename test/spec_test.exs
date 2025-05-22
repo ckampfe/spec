@@ -12,20 +12,25 @@ defmodule SpecTest do
     v in 10..100
   end
 
+  def is_even(v) do
+    Integer.is_even(v)
+  end
+
   test "valid?/2" do
-    assert Spec.valid?(&Integer.is_even/1, 2)
-    refute Spec.valid?(&Integer.is_even/1, 1)
+    assert Spec.valid?(fn v -> Integer.is_even(v) end, 2)
+    refute Spec.valid?({__MODULE__, :is_even}, 1)
+
     assert Spec.valid?(MapSet.new([1, 2, 3]), 1)
     refute Spec.valid?(MapSet.new([1, 2, 3]), 9)
 
-    assert Spec.valid?(Enum, :empty?, [])
+    assert Spec.valid?({Enum, :empty?}, [])
 
-    refute Spec.valid?(__MODULE__, :equals_42, 22)
+    refute Spec.valid?({__MODULE__, :equals_42}, 22)
   end
 
   test "conform/2" do
-    assert Spec.conform(&Integer.is_even/1, 2) == {:ok, 2}
-    assert match?({:error, %{value: 1}}, Spec.conform(&Integer.is_even/1, 1))
+    assert Spec.conform({__MODULE__, :is_even}, 2) == {:ok, 2}
+    assert match?({:error, %{value: 1}}, Spec.conform({__MODULE__, :is_even}, 1))
     assert Spec.conform(MapSet.new([1, 2, 3]), 1) == {:ok, 1}
     assert match?({:error, _}, Spec.conform(MapSet.new([1, 2, 3]), 9))
 
@@ -36,7 +41,7 @@ defmodule SpecTest do
   end
 
   test "all" do
-    spec = Spec.all?([&Integer.is_even/1, fn v -> v < 10 end])
+    spec = Spec.all?([{__MODULE__, :is_even}, fn v -> v < 10 end])
 
     assert Spec.conform(spec, 4) == {:ok, 4}
     assert match?({:error, _}, Spec.conform(spec, 12))
@@ -44,7 +49,8 @@ defmodule SpecTest do
     assert Spec.valid?(spec, 4)
     refute Spec.valid?(spec, 12)
 
-    module_spec = Spec.all?([{__MODULE__, :equals_42}, {__MODULE__, :in_10_100}])
+    module_spec =
+      Spec.all?([{__MODULE__, :equals_42}, {__MODULE__, :in_10_100}])
 
     assert Spec.conform(module_spec, 111) ==
              {:error, %{value: 111, path: [], spec: {SpecTest, :equals_42}}}
@@ -53,7 +59,7 @@ defmodule SpecTest do
   end
 
   test "any" do
-    spec = Spec.any?(even: &Integer.is_even/1, less_than_10: fn v -> v < 10 end)
+    spec = Spec.any?(even: {__MODULE__, :is_even}, less_than_10: fn v -> v < 10 end)
 
     assert Spec.conform(spec, 4) == {:ok, {:even, 4}}
     assert Spec.conform(spec, 9) == {:ok, {:less_than_10, 9}}
