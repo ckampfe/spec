@@ -5,6 +5,7 @@
 # - [ ] pass full, original object to all subspecs so they can correlate, if they want
 # - [x] struct to store all spec context
 # - [ ] write docs
+# - [ ] set up CI
 
 defmodule Spec do
   @enforce_keys [:impl, :repr]
