@@ -7,11 +7,39 @@
 
 defmodule Spec do
   @enforce_keys [:impl, :repr]
-  defstruct impl: nil, repr: nil
+  defstruct [:impl, :repr]
 
-  def conform(term, value) do
-    spec = AsSpec.as_spec(term)
-    do_conform(spec, value, [])
+  defmodule Keys do
+    defstruct [:args]
+  end
+
+  defmodule All do
+    defstruct [:args]
+  end
+
+  defmodule Any do
+    defstruct [:args]
+  end
+
+  defmodule Context do
+    defstruct [:path]
+  end
+
+  def conform(term, value, context \\ %Spec.Context{path: []}) do
+    case AsSpec.test(term, value, context) do
+      :ok ->
+        {:ok, value}
+
+      {:ok, value} ->
+        {:ok, value}
+
+      :error ->
+        repr = AsSpec.to_string(term)
+        {:error, %{value: value, spec: repr, path: context.path}}
+
+      {:error, e} ->
+        {:error, e}
+    end
   end
 
   def valid?(term, value) do
@@ -19,15 +47,15 @@ defmodule Spec do
   end
 
   def all?(specs) when is_list(specs) do
-    %Spec{impl: {:all, specs}, repr: "all?"}
+    %Spec.All{args: specs}
   end
 
   def any?(specs) when is_list(specs) do
-    %Spec{impl: {:any, specs}, repr: "any?"}
+    %Spec.Any{args: specs}
   end
 
   def keys(args) when is_list(args) do
-    %Spec{impl: {:keys, args}, repr: "keys"}
+    %Spec.Keys{args: args}
   end
 
   @doc false
@@ -43,17 +71,40 @@ defmodule Spec do
 
     %Spec{impl: as_tuple, repr: repr}
   end
+end
 
-  defp do_conform(%Spec{impl: spec}, value, path) when is_function(spec, 1) do
-    if spec.(value) do
-      {:ok, value}
-    else
-      {:error, %{spec: spec, value: value, path: path}}
+defprotocol AsSpec do
+  require Spec
+
+  def test(spec, value, context)
+  def to_string(spec)
+end
+
+defimpl AsSpec, for: Tuple do
+  require Spec
+
+  def test({m, f}, value, context) do
+    case apply(m, f, [value]) do
+      v when is_struct(v) ->
+        AsSpec.test(v, value, context)
+
+      truthy_value when truthy_value ->
+        {:ok, value}
+
+      _falsy_value ->
+        :error
     end
   end
 
-  defp do_conform(%Spec{impl: {:keys, specs}, repr: repr} = full, value, path)
-       when is_map(value) do
+  def to_string(spec) do
+    Macro.to_string(spec)
+  end
+end
+
+defimpl AsSpec, for: Spec.Keys do
+  require Spec
+
+  def test(%Spec.Keys{args: specs} = full, value, context) do
     req_specs = specs[:required]
     opt_specs = specs[:optional]
     keys = MapSet.new(Map.keys(value))
@@ -70,9 +121,9 @@ defmodule Spec do
       throw(
         {:error,
          %{
-           spec: repr,
+           spec: AsSpec.to_string(full),
            value: value,
-           path: path,
+           path: context.path,
            error: "required and optional keysets cannot both be empty"
          }}
       )
@@ -82,9 +133,9 @@ defmodule Spec do
       throw(
         {:error,
          %{
-           spec: full,
+           spec: AsSpec.to_string(full),
            value: value,
-           path: path,
+           path: context.path,
            error: "required keys cannot alows be optional keys"
          }}
       )
@@ -95,17 +146,20 @@ defmodule Spec do
 
       throw(
         {:error,
-         %{spec: full, value: value, path: path, error: "missing #{inspect(Enum.to_list(diff))}"}}
+         %{
+           spec: full,
+           value: value,
+           path: context.path,
+           error: "missing #{inspect(Enum.to_list(diff))}"
+         }}
       )
     end
 
     {req_conform, errors} =
       Enum.reduce_while(req_specs, {value, []}, fn {key, spec}, {acc, errors} ->
-        as_spec = AsSpec.as_spec(spec)
-
         value_for_key = Map.fetch!(acc, key)
 
-        case do_conform(as_spec, value_for_key, path ++ [key]) do
+        case Spec.conform(spec, value_for_key, %{context | path: context.path ++ [key]}) do
           {:ok, conformed} ->
             {:cont, {Map.put(acc, key, conformed), errors}}
 
@@ -124,9 +178,7 @@ defmodule Spec do
             {:cont, {acc, errors}}
 
           {:ok, value_for_key} ->
-            as_spec = AsSpec.as_spec(spec)
-
-            case do_conform(as_spec, value_for_key, path ++ [key]) do
+            case Spec.conform(spec, value_for_key, %{context | path: context.path ++ [key]}) do
               {:ok, conformed} ->
                 {:cont, {Map.put(acc, key, conformed), errors}}
 
@@ -149,28 +201,16 @@ defmodule Spec do
       e
   end
 
-  defp do_conform(%Spec{impl: %MapSet{} = spec, repr: repr}, value, path) do
-    if MapSet.member?(spec, value) do
-      {:ok, value}
-    else
-      {:error, %{value: value, spec: repr, path: path}}
-    end
+  def to_string(_spec) do
+    "keys"
   end
+end
 
-  defp do_conform(%Spec{impl: %Range{} = spec, repr: repr}, value, path) do
-    if value in spec do
-      {:ok, value}
-    else
-      {:error, %{value: value, spec: repr, path: path}}
-    end
-  end
-
-  defp do_conform(%Spec{impl: {:all, specs}}, value, path) do
+defimpl AsSpec, for: Spec.All do
+  def test(%Spec.All{args: specs}, value, context) do
     out =
       Enum.reduce_while(specs, value, fn spec, acc ->
-        as_spec = AsSpec.as_spec(spec)
-
-        case do_conform(as_spec, acc, path) do
+        case Spec.conform(spec, acc, context) do
           {:ok, conformed} ->
             {:cont, conformed}
 
@@ -185,19 +225,23 @@ defmodule Spec do
     end
   end
 
-  defp do_conform(%Spec{impl: {:any, specs_and_keys}}, value, path) do
-    out =
-      Enum.reduce_while(specs_and_keys, [], fn {key, spec}, errors ->
-        as_spec = AsSpec.as_spec(spec)
+  def to_string(_spec) do
+    "all"
+  end
+end
 
-        case do_conform(as_spec, value, path) do
+defimpl AsSpec, for: Spec.Any do
+  def test(%Spec.Any{args: specs}, value, context) do
+    out =
+      Enum.reduce_while(specs, [], fn {key, spec}, errors ->
+        case Spec.conform(spec, value, context) do
           {:ok, conformed} ->
             {:halt, {:ok, {key, conformed}}}
 
           {:error, e} ->
             e =
               Map.update!(e, :path, fn path ->
-                [key | path]
+                path ++ [key]
               end)
 
             {:cont, [e | errors]}
@@ -210,69 +254,65 @@ defmodule Spec do
     end
   end
 
-  defp do_conform(%Spec{impl: {m, f}}, value, path) when is_atom(m) and is_atom(f) do
-    case apply(m, f, [value]) do
-      %Spec{} = s ->
-        do_conform(s, value, path)
-
-      truthy_value when truthy_value ->
-        {:ok, value}
-
-      _falsy_value ->
-        {:error, %{value: value, spec: {m, f}, path: path}}
-    end
-  end
-end
-
-defprotocol AsSpec do
-  require Spec
-
-  @fallback_to_any true
-  def as_spec(s)
-end
-
-defimpl AsSpec, for: Tuple do
-  require Spec
-
-  def as_spec({m, f}) when is_atom(m) and is_atom(f) do
-    Spec.from_mf(m, f)
+  def to_string(_spec) do
+    "any"
   end
 end
 
 defimpl AsSpec, for: MapSet do
   require Spec
 
-  def as_spec(s) do
-    Spec.new(s)
+  def test(impl, value, _context) do
+    if MapSet.member?(impl, value) do
+      :ok
+    else
+      :error
+    end
+  end
+
+  def to_string(spec) do
+    Macro.to_string(spec)
   end
 end
 
 defimpl AsSpec, for: Function do
   require Spec
 
-  def as_spec(s) do
-    Spec.new(s)
+  def test(impl, value, _context) do
+    if impl.(value) do
+      :ok
+    else
+      :error
+    end
+  end
+
+  def to_string(spec) do
+    Macro.to_string(spec)
   end
 end
 
 defimpl AsSpec, for: Range do
   require Spec
 
-  def as_spec(s) do
-    Spec.new(s)
+  def test(impl, value, _context) do
+    if value in impl do
+      :ok
+    else
+      :error
+    end
   end
-end
 
-defimpl AsSpec, for: Spec do
-  require Spec
-
-  def as_spec(s) do
-    s
+  def to_string(spec) do
+    Macro.to_string(spec)
   end
 end
 
 defimpl AsSpec, for: Any do
-  def as_spec(s) do
-    raise "AsSpec not implemented for #{inspect(s)}"
+  def test(_spec, _value, _context) do
+    raise "lkdjfjlkj"
+  end
+
+  def to_string(spec) do
+    Macro.to_string(spec)
   end
 end

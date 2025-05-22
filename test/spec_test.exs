@@ -36,7 +36,7 @@ defmodule SpecTest do
 
     assert Spec.conform({Enum, :empty?}, []) == {:ok, []}
 
-    assert {:error, %{value: 22, path: [], spec: {__MODULE__, :equals_42}}} =
+    assert {:error, %{value: 22, path: [], spec: "{SpecTest, :equals_42}"}} =
              Spec.conform({__MODULE__, :equals_42}, 22)
   end
 
@@ -53,7 +53,7 @@ defmodule SpecTest do
       Spec.all?([{__MODULE__, :equals_42}, {__MODULE__, :in_10_100}])
 
     assert Spec.conform(module_spec, 111) ==
-             {:error, %{value: 111, path: [], spec: {SpecTest, :equals_42}}}
+             {:error, %{value: 111, path: [], spec: "{SpecTest, :equals_42}"}}
 
     assert Spec.conform(module_spec, 42) == {:ok, 42}
   end
@@ -75,8 +75,8 @@ defmodule SpecTest do
     assert Spec.conform(module_spec, 111) ==
              {:error,
               [
-                %{value: 111, path: [:in_range], spec: {SpecTest, :in_10_100}},
-                %{value: 111, path: [:is_42], spec: {SpecTest, :equals_42}}
+                %{value: 111, path: [:in_range], spec: "{SpecTest, :in_10_100}"},
+                %{value: 111, path: [:is_42], spec: "{SpecTest, :equals_42}"}
               ]}
 
     assert Spec.conform(module_spec, 42) == {:ok, {:is_42, 42}}

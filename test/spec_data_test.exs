@@ -18,7 +18,7 @@ defmodule CarSpecs do
   end
 
   def financing_term_months(_v) do
-    Spec.all?([&is_integer/1, 0..50])
+    Spec.any?(short: 24..48, longer: 72..120)
   end
 
   def financing_contingent(_v) do
@@ -86,7 +86,24 @@ defmodule SpecDataTest do
              :error,
              [
                %{value: 2025, path: [:year], spec: _},
-               %{value: 60, path: [:financing, :term_months], spec: "0..50"},
+               %{
+                 path: [
+                   :financing,
+                   :term_months,
+                   :longer
+                 ],
+                 spec: "72..120",
+                 value: 60
+               },
+               %{
+                 path: [
+                   :financing,
+                   :term_months,
+                   :short
+                 ],
+                 spec: "24..48",
+                 value: 60
+               },
                %{value: "sof", path: [:financing, :interest_rate], spec: _}
              ]
            } = Spec.conform(spec, data)
