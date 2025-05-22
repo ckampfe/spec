@@ -4,6 +4,7 @@
 # - [x] store stringified version of spec so users can see what spec failed clearly
 # - [ ] pass full, original object to all subspecs so they can correlate, if they want
 # - [x] struct to store all spec context
+# - [ ] write docs
 
 defmodule Spec do
   @enforce_keys [:impl, :repr]
