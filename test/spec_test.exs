@@ -29,10 +29,10 @@ defmodule SpecTest do
     assert Spec.conform(MapSet.new([1, 2, 3]), 1) == {:ok, 1}
     assert match?({:error, _}, Spec.conform(MapSet.new([1, 2, 3]), 9))
 
-    assert Spec.conform(Enum, :empty?, []) == {:ok, []}
+    assert Spec.conform({Enum, :empty?}, []) == {:ok, []}
 
     assert {:error, %{value: 22, path: [], spec: {__MODULE__, :equals_42}}} =
-             Spec.conform(__MODULE__, :equals_42, 22)
+             Spec.conform({__MODULE__, :equals_42}, 22)
   end
 
   test "all" do

@@ -22,8 +22,8 @@ defmodule Spec do
     end
   end
 
-  def conform(m, f, value) when is_atom(m) and is_atom(f) do
-    do_conform({m, f}, value, [])
+  def conform({m, f} = mf, value) when is_atom(m) and is_atom(f) do
+    do_conform(mf, value, [])
   end
 
   def conform(spec, value) when is_function(spec, 1) do
@@ -244,7 +244,7 @@ defmodule Spec do
   end
 
   def valid?(m, f, value) when is_atom(m) and is_atom(f) do
-    match?({:ok, _}, conform(m, f, value))
+    match?({:ok, _}, conform({m, f}, value))
   end
 
   # Kernel.def def(name, do: body) do
