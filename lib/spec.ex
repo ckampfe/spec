@@ -74,6 +74,9 @@ defimpl AsSpec, for: Tuple do
 
   def test({m, f}, value, context) do
     case apply(m, f, [value]) do
+      # TODO: is this enough?
+      # is it a reasonable restriction to have
+      # Module.function only return structs that impl AsSpec?
       v when is_struct(v) ->
         AsSpec.test(v, value, context)
 
