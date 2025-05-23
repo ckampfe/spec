@@ -60,20 +60,6 @@ defmodule Spec do
   def keys(args) when is_list(args) do
     %Spec.Keys{args: args}
   end
-
-  @doc false
-  def new(impl) do
-    repr = Macro.to_string(impl)
-    %Spec{impl: impl, repr: repr}
-  end
-
-  @doc false
-  def from_mf(m, f) do
-    as_tuple = {m, f}
-    repr = inspect(as_tuple)
-
-    %Spec{impl: as_tuple, repr: repr}
-  end
 end
 
 defprotocol AsSpec do
