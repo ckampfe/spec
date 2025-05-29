@@ -16,6 +16,10 @@ defmodule SpecTest do
     Integer.is_even(v)
   end
 
+  def is_odd(v) do
+    Integer.is_odd(v)
+  end
+
   test "valid?/2" do
     assert Spec.valid?(fn v -> Integer.is_even(v) end, 2)
     refute Spec.valid?({__MODULE__, :is_even}, 1)
@@ -30,13 +34,18 @@ defmodule SpecTest do
 
   test "conform/2" do
     assert Spec.conform({__MODULE__, :is_even}, 2) == {:ok, 2}
-    assert match?({:error, %{value: 1}}, Spec.conform({__MODULE__, :is_even}, 1))
+
+    assert match?(
+             {:error, %{value: 1, spec: {__MODULE__, :is_even}}},
+             Spec.conform({__MODULE__, :is_even}, 1)
+           )
+
     assert Spec.conform(MapSet.new([1, 2, 3]), 1) == {:ok, 1}
     assert match?({:error, _}, Spec.conform(MapSet.new([1, 2, 3]), 9))
 
     assert Spec.conform({Enum, :empty?}, []) == {:ok, []}
 
-    assert {:error, %{value: 22, path: [], spec: "{SpecTest, :equals_42}"}} =
+    assert {:error, %{value: 22, path: [], spec: {SpecTest, :equals_42}}} =
              Spec.conform({__MODULE__, :equals_42}, 22)
   end
 
@@ -53,7 +62,7 @@ defmodule SpecTest do
       Spec.all?([{__MODULE__, :equals_42}, {__MODULE__, :in_10_100}])
 
     assert Spec.conform(module_spec, 111) ==
-             {:error, %{value: 111, path: [], spec: "{SpecTest, :equals_42}"}}
+             {:error, %{value: 111, path: [], spec: {SpecTest, :equals_42}}}
 
     assert Spec.conform(module_spec, 42) == {:ok, 42}
   end
@@ -75,8 +84,8 @@ defmodule SpecTest do
     assert Spec.conform(module_spec, 111) ==
              {:error,
               [
-                %{value: 111, path: [:in_range], spec: "{SpecTest, :in_10_100}"},
-                %{value: 111, path: [:is_42], spec: "{SpecTest, :equals_42}"}
+                %{value: 111, path: [:in_range], spec: {SpecTest, :in_10_100}},
+                %{value: 111, path: [:is_42], spec: {SpecTest, :equals_42}}
               ]}
 
     assert Spec.conform(module_spec, 42) == {:ok, {:is_42, 42}}
@@ -94,7 +103,8 @@ defmodule SpecTest do
 
     assert Spec.conform(spec, %{a: "hi", b: 8}) == {:ok, %{a: "hi", b: 8}}
 
-    assert {:error, [%{value: "longer than 5", path: [:a], spec: _}]} =
+    assert {:error,
+            [%{value: "longer than 5", path: [:a], spec: "fn v -> String.length(v) < 5 end"}]} =
              Spec.conform(spec, %{a: "longer than 5", b: 8})
 
     assert Spec.conform(spec, %{a: "hi", b: 8}) == {:ok, %{a: "hi", b: 8}}
@@ -109,8 +119,8 @@ defmodule SpecTest do
 
     assert {:error,
             [
-              %{value: "not an int", path: [:b], spec: _},
-              %{value: 842_848_024, path: [:a], spec: _}
+              %{value: "not an int", path: [:b], spec: "&is_integer/1"},
+              %{value: 842_848_024, path: [:a], spec: "&is_binary/1"}
             ]} = Spec.conform(spec, %{a: 842_848_024, b: "not an int"})
 
     assert Spec.conform(spec, %{a: "hi", b: 8, c: "something"}) ==
@@ -135,7 +145,7 @@ defmodule SpecTest do
               %{
                 value: "longer than 5",
                 path: [:a],
-                spec: _
+                spec: "fn v -> String.length(v) < 5 end"
               }
             ]} =
              Spec.conform(spec, %{a: "longer than 5", b: 8})
@@ -146,8 +156,8 @@ defmodule SpecTest do
 
     assert {:error,
             [
-              %{value: "not an int", path: [:b], spec: _},
-              %{value: 842_848_024, path: [:a], spec: _}
+              %{value: "not an int", path: [:b], spec: "&is_integer/1"},
+              %{value: 842_848_024, path: [:a], spec: "&is_binary/1"}
             ]} = Spec.conform(spec, %{a: 842_848_024, b: "not an int"})
   end
 
@@ -164,7 +174,8 @@ defmodule SpecTest do
     # required keys only
     assert Spec.conform(spec, %{a: "hi", b: 8}) == {:ok, %{a: "hi", b: 8}}
 
-    assert {:error, [%{value: "longer than 5", path: [:a], spec: _}]} =
+    assert {:error,
+            [%{value: "longer than 5", path: [:a], spec: "fn v -> String.length(v) < 5 end"}]} =
              Spec.conform(spec, %{a: "longer than 5", b: 8})
 
     assert {
@@ -173,12 +184,12 @@ defmodule SpecTest do
                %{
                  path: [:b],
                  value: "not an int",
-                 spec: _
+                 spec: "&is_integer/1"
                },
                %{
                  path: [:a],
                  value: 842_848_024,
-                 spec: _
+                 spec: "&is_binary/1"
                }
              ]
            } =
@@ -186,7 +197,12 @@ defmodule SpecTest do
 
     # with opt
     assert Spec.conform(spec, %{a: "hi", b: 8, c: :foo}) == {:ok, %{a: "hi", b: 8, c: :foo}}
-    assert match?({:error, _}, Spec.conform(spec, %{a: "hi", b: 8, c: "nope"}))
+
+    assert {:error,
+            [
+              %{value: "nope", path: [:c], spec: "&is_atom/1"}
+            ]} =
+             Spec.conform(spec, %{a: "hi", b: 8, c: "nope"})
 
     # valid?
     assert Spec.valid?(spec, %{a: "hi", b: 8})

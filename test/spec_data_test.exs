@@ -92,7 +92,7 @@ defmodule SpecDataTest do
                    :term_months,
                    :longer
                  ],
-                 spec: "72..120",
+                 spec: 72..120,
                  value: 60
                },
                %{
@@ -101,7 +101,7 @@ defmodule SpecDataTest do
                    :term_months,
                    :short
                  ],
-                 spec: "24..48",
+                 spec: 24..48,
                  value: 60
                },
                %{value: "sof", path: [:financing, :interest_rate], spec: _}

@@ -4,6 +4,9 @@
 # - [x] store stringified version of spec so users can see what spec failed clearly
 # - [ ] pass full, original object to all subspecs so they can correlate, if they want
 # - [x] struct to store all spec context
+# - [x] when :error, keep regular specs as terms, stringify `fn`, `&Shorthand.fn/1`, etc.
+# - [ ] defspec
+# - [ ] report line/module/fn etc when erroring. maybe?
 # - [ ] write docs
 # - [ ] set up CI
 # - [x] README
@@ -13,23 +16,88 @@ defmodule Spec do
   defstruct [:impl, :repr]
 
   defmodule Keys do
-    defstruct [:args]
+    @enforce_keys [:args, :repr]
+    defstruct [:args, :repr]
   end
 
   defmodule All do
-    defstruct [:args]
+    @enforce_keys [:args, :repr]
+    defstruct [:args, :repr]
   end
 
   defmodule Any do
-    defstruct [:args]
+    @enforce_keys [:args, :repr]
+    defstruct [:args, :repr]
   end
 
   defmodule Context do
+    @enforce_keys [:path]
     defstruct [:path]
   end
 
-  def conform(term, value, context \\ %Spec.Context{path: []}) do
-    case AsSpec.test(term, value, context) do
+  # defmacro defspec(quoted_name, do: body) do
+  #   {name, _meta, args} = quoted_name
+  #   # mod = __MODULE__
+  #   repr = Macro.to_string({__MODULE__, name})
+
+  #   quote do
+  #     def unquote(name)(unquote_splicing(args)) do
+  #       %Spec{
+  #         impl: fn arg ->
+  #           unquote(body)
+  #         end,
+  #         repr: unquote(repr)
+  #       }
+  #     end
+  #   end
+  # end
+
+  defmacro s(block) do
+    # this is the way that it is because for specs that make sense to represent literally,
+    # we want to do so. Examples being:
+    # - {Module, :fun}
+    # - {:any, ...}
+    # - {:all, ...}
+    # - {:keys, ...}
+    # - Range
+    #
+    # For things with no/poor literal representations,
+    # we want to stringify them:
+    # - fn
+    # - &Mod.fn/1
+    {impl, repr} =
+      case block do
+        # Spec.all?/Spec.any?/Spec.keys
+        {{:., _meta_meta, _call}, _meta, _args} = expr ->
+          {expr, expr}
+
+        # fn v -> ... end
+        {:fn, _meta, _body} = expr ->
+          {expr, Macro.to_string(expr)}
+
+        # &Integer.is_even/1
+        {:&, _meta, _f} = expr ->
+          {expr, Macro.to_string(expr)}
+
+        # range
+        {:.., _meta, _range} = expr ->
+          {expr, expr}
+
+        # {MySpecs, :some_great_spec}
+        {_mod, fun} = expr when is_atom(fun) ->
+          {expr, expr}
+      end
+
+    quote do
+      %Spec{
+        impl: unquote(impl),
+        repr: unquote(repr)
+      }
+    end
+  end
+
+  def conform(spec, value, context \\ %Spec.Context{path: []}) do
+    case AsSpec.test(spec, value, context) do
       :ok ->
         {:ok, value}
 
@@ -37,7 +105,7 @@ defmodule Spec do
         {:ok, value}
 
       :error ->
-        repr = AsSpec.to_string(term)
+        repr = AsSpec.to_string(spec)
         {:error, %{value: value, spec: repr, path: context.path}}
 
       {:error, e} ->
@@ -49,16 +117,90 @@ defmodule Spec do
     match?({:ok, _}, conform(term, value))
   end
 
-  def all?(specs) when is_list(specs) do
-    %Spec.All{args: specs}
+  defmacro all?(specs) when is_list(specs) do
+    spec_reprs =
+      specs
+      |> Enum.map(fn spec ->
+        AsSpec.to_string(spec)
+      end)
+
+    repr = {:all, spec_reprs}
+
+    args =
+      specs
+      |> Enum.map(fn spec ->
+        quote do
+          Spec.s(unquote(spec))
+        end
+      end)
+
+    quote do
+      %Spec.All{args: unquote(args), repr: unquote(repr)}
+    end
   end
 
-  def any?(specs) when is_list(specs) do
-    %Spec.Any{args: specs}
+  defmacro any?(specs) when is_list(specs) do
+    reprs =
+      specs
+      |> Enum.map(fn {key, spec} ->
+        {key, AsSpec.to_string(spec)}
+      end)
+
+    repr = {:any, reprs}
+
+    args =
+      specs
+      |> Enum.map(fn {key, spec} ->
+        quote do
+          {unquote(key), Spec.s(unquote(spec))}
+        end
+      end)
+
+    quote do
+      %Spec.Any{args: unquote(args), repr: unquote(repr)}
+    end
   end
 
-  def keys(args) when is_list(args) do
-    %Spec.Keys{args: args}
+  defmacro keys(args) when is_list(args) do
+    required_reprs =
+      args
+      |> Keyword.get(:required, [])
+      |> Enum.map(fn {key, spec} ->
+        {key, AsSpec.to_string(spec)}
+      end)
+
+    optional_reprs =
+      args
+      |> Keyword.get(:optional, [])
+      |> Enum.map(fn {key, spec} ->
+        {key, AsSpec.to_string(spec)}
+      end)
+
+    repr = {:keys, required: required_reprs, optional: optional_reprs}
+
+    required_args =
+      args
+      |> Keyword.get(:required, [])
+      |> Enum.map(fn {key, spec} ->
+        quote do
+          {unquote(key), Spec.s(unquote(spec))}
+        end
+      end)
+
+    optional_args =
+      args
+      |> Keyword.get(:optional, [])
+      |> Enum.map(fn {key, spec} ->
+        quote do
+          {unquote(key), Spec.s(unquote(spec))}
+        end
+      end)
+
+    args = [required: required_args, optional: optional_args]
+
+    quote do
+      %Spec.Keys{args: unquote(args), repr: unquote(repr)}
+    end
   end
 end
 
@@ -89,7 +231,17 @@ defimpl AsSpec, for: Tuple do
   end
 
   def to_string(spec) do
-    Macro.to_string(spec)
+    spec
+  end
+end
+
+defimpl AsSpec, for: Spec do
+  def test(impl, value, context) do
+    AsSpec.test(impl.impl, value, context)
+  end
+
+  def to_string(spec) do
+    spec.repr
   end
 end
 
@@ -193,8 +345,8 @@ defimpl AsSpec, for: Spec.Keys do
       e
   end
 
-  def to_string(_spec) do
-    "keys"
+  def to_string(spec) do
+    spec
   end
 end
 
@@ -217,8 +369,8 @@ defimpl AsSpec, for: Spec.All do
     end
   end
 
-  def to_string(_spec) do
-    "all"
+  def to_string(spec) do
+    spec
   end
 end
 
