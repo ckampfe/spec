@@ -2,6 +2,10 @@
 
 Validate data against specifications
 
+[![Elixir CI](https://github.com/ckampfe/spec/actions/workflows/elixir.yml/badge.svg)](https://github.com/ckampfe/spec/actions/workflows/elixir.yml)
+
+---
+
 ## What/why
 
 You want to validate input data before it makes its way into the
